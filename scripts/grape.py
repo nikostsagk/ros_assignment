@@ -6,7 +6,9 @@ import random as rng
 import rospy
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+from dynamic_reconfigure.server import Server
 
+from ros_assignment.cfg import HsvConfig
 
 class image_converter:
     def __init__(self):
@@ -16,15 +18,31 @@ class image_converter:
         self.purple_mask_pub = rospy.Publisher("/purple_mask", Image, queue_size=1)
         self.debug_pub = rospy.Publisher("/debug", Image, queue_size=1)
 
+        self.dyn_reconf_srv = Server(HsvConfig, self.dyn_reconf_callback)
+
+    def dyn_reconf_callback(self, config, level):
+        self.config = config
+        for i in config.items():
+          if hasattr(self, i[0]):
+              setattr(self, i[0], i[1])
+              print i[0], "set to:", getattr(self, i[0])
+        return config
+
+    def colour_filter(self, image):
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        lower_filter_r = np.array([self.config["H_min"], self.config["S_min"], self.config["V_min"]])
+        upper_filter_r = np.array([self.config["H_max"], self.config["S_max"], self.config["V_max"]])
+        mask = cv2.inRange(hsv_image, lower_filter_r, upper_filter_r)
+        return mask
+
     def image_callback(self, data):
         # imsgmsg to cv2
         cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
 
         # Covnert to HSV
-        hsv_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
         # Filter out anything but purple
-        purple_mask = cv2.inRange(hsv_image, (100, 20, 20), (165, 255, 255))
+        purple_mask = self.colour_filter(cv_image)#cv2.inRange(hsv_image, (100, 20, 20), (165, 255, 255))
 
         # Debug
         kernel = np.ones((3,3), dtype=np.uint8)
