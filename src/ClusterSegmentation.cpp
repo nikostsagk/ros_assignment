@@ -26,6 +26,7 @@ Modified: Nikolas Tsagkopoulos
 #include <ros_assignment/SegmentedClustersArray.h>
 
 
+
 class ClusterSegmentation {
 
 public:
@@ -43,6 +44,11 @@ public:
         m_sub = m_nh.subscribe(input_cloud_topic, 1, &ClusterSegmentation::cloudCallback, this);
         m_clusterPub = m_nh.advertise<ros_assignment::SegmentedClustersArray>("/cluster_segmentation/pcl_clusters", 1);
         pcl_pub_ = m_nh.advertise<sensor_msgs::PointCloud2>("/cluster_segmentation/segmented_clusters", 1);
+
+	privateNodeHandle.param<bool>("debug", debug, false);
+	if (debug) {
+	    purple_mask_pub_ = m_nh.advertise<sensor_msgs::PointCloud2>("/cluster_segmentation/purple_mask", 1);
+	}
     }
 
 private:
@@ -52,9 +58,13 @@ private:
     ros::Subscriber m_sub;
     ros::Publisher m_clusterPub;
     ros::Publisher pcl_pub_;
+    ros::Publisher purple_mask_pub_;
+
+    bool debug;
 
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr &cloudMsg);
     void publishPointCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointCloud, std::string frameID);
+    void publishPurpleMask(pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointCloud, std::string frameID);
 
 }; // end class definition
 
@@ -65,45 +75,49 @@ void ClusterSegmentation::publishPointCloud(pcl::PointCloud<pcl::PointXYZRGB>::P
     pcl_pub_.publish(outputPCL);
 }
 
+void ClusterSegmentation::publishPurpleMask(pcl::PointCloud<pcl::PointXYZRGB>::Ptr pointCloud, std::string frameID) {
+    pcl::PCLPointCloud2 outputPCL;
+    pcl::toPCLPointCloud2(*pointCloud, outputPCL);
+    outputPCL.header.frame_id = frameID;
+    purple_mask_pub_.publish(outputPCL);
+}
+
 // define callback function
 void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &cloudMsg)
 {
+
     ROS_INFO("Received cloud_msg");
-
-    // Container for original & filtered data
-    pcl::PCLPointCloud2Ptr cloudPtr(new pcl::PCLPointCloud2);
-    pcl::PCLPointCloud2Ptr cloudFilteredPtr(new pcl::PCLPointCloud2);
-
+    
     // Convert to PCL data type
+    pcl::PCLPointCloud2Ptr cloudPtr(new pcl::PCLPointCloud2);
     pcl_conversions::toPCL(*cloudMsg, *cloudPtr);
-
+    
     // Perform voxel grid downsampling filtering
+    pcl::PCLPointCloud2Ptr cloudVoxelFilteredPtr(new pcl::PCLPointCloud2);
     pcl::VoxelGrid<pcl::PCLPointCloud2> sor;
     sor.setInputCloud (cloudPtr);
-    sor.setLeafSize (0.01, 0.01, 0.01);
-    sor.filter (*cloudFilteredPtr);
+    sor.setLeafSize (0.01f, 0.01f, 0.01f);
+    sor.filter (*cloudVoxelFilteredPtr);
 
+    // Convert the pcl::PointCloud2Ptr type to pcl::PointCloud<pcl::PointXYZRGB>
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudPtr(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::fromPCLPointCloud2(*cloudVoxelFilteredPtr, *xyzCloudPtr);
+    //publishPointCloud(xyzCloudPtr, cloudMsg->header.frame_id);
+    ROS_INFO("Applied voxel grid filter: %lu points", xyzCloudPtr->points.size());
 
-    // convert the pcl::PointCloud2 tpye to pcl::PointCloud<pcl::PointXYZRGB>
-    pcl::fromPCLPointCloud2(*cloudFilteredPtr, *xyzCloudPtr);
-//    publishPointCloud(xyzCloudPtr, cloudMsg->header.frame_id);
-    ROS_INFO("Applied voxel grid filter");
-
-    // create a pcl object to hold the passthrough filtered results
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudPtrFiltered(new pcl::PointCloud<pcl::PointXYZRGB>);
-
-    // Create the filtering object
+    // Perform passthrough filtering
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudPassFilteredPtr(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PassThrough<pcl::PointXYZRGB> pass;
     pass.setInputCloud (xyzCloudPtr);
     pass.setFilterFieldName ("z");
     pass.setFilterLimits (.5, 2.5);
     //pass.setFilterLimitsNegative (true);
-    pass.filter (*xyzCloudPtrFiltered);
+    pass.filter (*xyzCloudPassFilteredPtr);
+    ROS_INFO("Applied passthrough filter: %lu points", xyzCloudPassFilteredPtr->points.size());
 
     // Convert the filtered pointcloud from RGB to HSV
     pcl::PointCloud<pcl::PointXYZHSV>::Ptr xyzCloudHSV(new pcl::PointCloud<pcl::PointXYZHSV>);
-    pcl::PointCloudXYZRGBtoXYZHSV(*xyzCloudPtr, *xyzCloudHSV);
+    pcl::PointCloudXYZRGBtoXYZHSV(*xyzCloudPassFilteredPtr, *xyzCloudHSV);
 
     // Filter out the non purple values
     pcl::PointCloud<pcl::PointXYZHSV>::Ptr xyzCloudHSVfiltered(new pcl::PointCloud<pcl::PointXYZHSV>);
@@ -136,7 +150,7 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     vfilter.setKeepOrganized (false);
     vfilter.filter (*xyzCloudHSVfiltered);
     
-    std::cout << xyzCloudHSV->points.size() << " " << xyzCloudHSVfiltered->points.size() << std::endl;
+    ROS_INFO("Applied HSV purple filter: %lu points", xyzCloudHSVfiltered->points.size());
     
     // Convert the HSV Filtered pointcloud back to RGB
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudRGBfiltered(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -148,9 +162,9 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     	pcl::PointXYZHSVtoXYZRGB(xyzCloudHSVfiltered->points[i], xyzCloudRGBfiltered->points[i]);
     }
 
-    
-    //publishPointCloud(xyzCloudRGBfiltered, cloudMsg->header.frame_id);
-    ROS_INFO("Applied passthrough filter");
+    if (debug) {
+	publishPurpleMask(xyzCloudRGBfiltered, cloudMsg->header.frame_id);
+    }
 
     // create a pcl object to hold the ransac filtered results
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudPtrRansacFiltered(new pcl::PointCloud<pcl::PointXYZRGB>);

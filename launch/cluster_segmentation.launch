@@ -1,8 +1,9 @@
 <launch>
 
   <!-- Start PCL_clustering -->
-  <node pkg="cluster_segmentation" name="cluster_segmentation" type="cluster_segmentation" output="screen">
+  <node pkg="ros_assignment" name="cluster_segmentation" type="cluster_segmentation" output="screen">
     <param name="input_cloud_topic" value="/depth_registered/points"/>
+    <param name="debug" value="true"/>
   </node>
 
 </launch>
