@@ -110,7 +110,7 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     pcl::PassThrough<pcl::PointXYZRGB> pass;
     pass.setInputCloud (xyzCloudPtr);
     pass.setFilterFieldName ("z");
-    pass.setFilterLimits (.5, 2.5);
+    pass.setFilterLimits (.5, 1.5);
     //pass.setFilterLimitsNegative (true);
     pass.filter (*xyzCloudPassFilteredPtr);
     ROS_INFO("Applied passthrough filter: %lu points", xyzCloudPassFilteredPtr->points.size());

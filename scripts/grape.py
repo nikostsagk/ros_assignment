@@ -12,11 +12,13 @@ from ros_assignment.cfg import HsvConfig
 
 class image_converter:
     def __init__(self):
+
+        self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_raw")
+
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber("/thorvald_001/kinect2_right_camera/hd/image_color_rect",
-                                          Image, self.image_callback)
-        self.purple_mask_pub = rospy.Publisher("/purple_mask", Image, queue_size=1)
-        self.debug_pub = rospy.Publisher("/debug", Image, queue_size=1)
+        self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
+        self.purple_mask_pub = rospy.Publisher("~purple_mask", Image, queue_size=1)
+        self.debug_pub = rospy.Publisher("~debug", Image, queue_size=1)
 
         self.dyn_reconf_srv = Server(HsvConfig, self.dyn_reconf_callback)
 
@@ -76,7 +78,8 @@ class image_converter:
         labels = np.unique(markers)
         for n, label in enumerate(labels[1::]):
             ix, iy = np.where(markers == label)
-            purple_mask_rgb[ix,iy,:] = colors[n]
+            print(len(colors), len(labels))
+            #purple_mask_rgb[ix,iy,:] = colors[n]
 
         debug = cv2.bitwise_and(purple_mask_rgb, purple_mask_3d)
          

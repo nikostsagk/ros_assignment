@@ -1,9 +1,14 @@
+<?xml version="1.0"?>
+
 <launch>
 
-  <!-- Start PCL_clustering -->
+  <arg name="input_cloud_topic" default="/depth_registered/points"/>
+  <arg name="debug"             default="false"/>
+
+  <!-- Start PCL clustering -->
   <node pkg="ros_assignment" name="cluster_segmentation" type="cluster_segmentation" output="screen">
-    <param name="input_cloud_topic" value="/depth_registered/points"/>
-    <param name="debug" value="true"/>
+    <param name="input_cloud_topic" value="$(arg input_cloud_topic)"/>
+    <param name="debug" value="$(arg debug)"/>
   </node>
 
 </launch>

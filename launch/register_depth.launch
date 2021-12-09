@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <arg name="rgb_camera_info"   default="/thorvald_001/kinect2_right_camera/hd/camera_info"/>
+  <arg name="rgb_image"         default="/thorvald_001/kinect2_right_camera/hd/image_color_rect"/>
+  <arg name="depth_camera_info" default="/thorvald_001/kinect2_right_sensor/sd/camera_info"/>
+  <arg name="depth_image"       default="/thorvald_001/kinect2_right_sensor/sd/image_depth_rect"/>
+  
+  <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" />
+
+  <!-- Register depth to RGB + publish RGB pointcloud -->
+  <node pkg="nodelet" type="nodelet" name="rgb_depth_register_node" args="load depth_image_proc/register nodelet_manager">
+    <remap from="rgb/camera_info"   to="$(arg rgb_camera_info)"/>
+    <remap from="depth/camera_info" to="$(arg depth_camera_info)"/>
+    <remap from="depth/image_rect"  to="$(arg depth_image)"/>
+  </node>
+  
+  <node pkg="nodelet" type="nodelet" name="rgb_pointcloud_node" args="load depth_image_proc/point_cloud_xyzrgb nodelet_manager">
+    <remap from="rgb/camera_info"      to="$(arg rgb_camera_info)"/>
+    <remap from="rgb/image_rect_color" to="$(arg rgb_image)"/>
+    <remap from="depth/image_rect"     to="$(arg depth_image)"/>
+  </node>
+
+</launch>
