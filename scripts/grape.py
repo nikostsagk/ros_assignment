@@ -45,13 +45,13 @@ class image_converter:
         purple_mask = self.colour_filter(cv_image)
 
         # Debug
-        kernel = np.ones((11,11), dtype=np.uint8)
-        kernel2 = np.ones((3,3), dtype=np.uint8)
+        kernel = np.ones((9,9), dtype=np.uint8)
+        kernel2 = np.ones((13,13), dtype=np.uint8)
         debug = purple_mask
-        debug = cv2.morphologyEx(debug, cv2.MORPH_CLOSE, None)
-        debug = cv2.morphologyEx(debug, cv2.MORPH_DILATE, kernel)
-        #debug = cv2.morphologyEx(debug, cv2.MORPH_OPEN, None)
-        purple_mask = cv2.morphologyEx(purple_mask, cv2.MORPH_OPEN, kernel2)
+        #debug = cv2.morphologyEx(debug, cv2.MORPH_DILATE, kernel)
+        debug = cv2.morphologyEx(debug, cv2.MORPH_CLOSE, kernel)
+        debug = cv2.morphologyEx(debug, cv2.MORPH_OPEN, kernel2)
+        purple_mask = debug#cv2.morphologyEx(purple_mask, cv2.MORPH_OPEN, kernel2)
 
         _, contours, _ = cv2.findContours(debug, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         markers = np.zeros(debug.shape, dtype=np.int32)
@@ -78,8 +78,7 @@ class image_converter:
         labels = np.unique(markers)
         for n, label in enumerate(labels[1::]):
             ix, iy = np.where(markers == label)
-            print(len(colors), len(labels))
-            #purple_mask_rgb[ix,iy,:] = colors[n]
+            purple_mask_rgb[ix,iy,:] = colors[n]
 
         debug = cv2.bitwise_and(purple_mask_rgb, purple_mask_3d)
          
@@ -89,7 +88,8 @@ class image_converter:
             try:
                 x0, x1 = min(ix), max(ix)
                 y0, y1 = min(iy), max(iy)
-                cv2.rectangle(cv_image, (y0, x0), (y1, x1), color, thickness=3)
+                if (y1 - y0) * (x1 - x0) < 0.5e5:
+                    cv2.rectangle(cv_image, (y0, x0), (y1, x1), color, thickness=3)
             except:
                 continue
 

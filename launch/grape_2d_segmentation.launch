@@ -7,7 +7,7 @@
   <group ns="ros_assignment">
 
   <!-- Start grape 2D annotation -->
-  <node pkg="ros_assignment" type="grape.py" name="grape_2d_segmentation">
+  <node pkg="ros_assignment" type="grape.py" name="grape_2d_segmentation" output="screen">
     <param name="image_topic" value="$(arg image_topic)"/>
   </node>
 

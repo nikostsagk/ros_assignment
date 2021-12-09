@@ -125,7 +125,7 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     pcl::ConditionAnd<pcl::PointXYZHSV>::Ptr sRange(new pcl::ConditionAnd<pcl::PointXYZHSV> ());
     pcl::ConditionAnd<pcl::PointXYZHSV>::Ptr vRange(new pcl::ConditionAnd<pcl::PointXYZHSV> ());
     hRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("h", pcl::ComparisonOps::GT, 140.0)));
-    hRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("h", pcl::ComparisonOps::LT, 260.0)));
+    hRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("h", pcl::ComparisonOps::LT, 280.0)));
     sRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("s", pcl::ComparisonOps::GT, 0.039)));
     sRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("s", pcl::ComparisonOps::LT, 1.0)));
     vRange->addComparison(pcl::FieldComparison<pcl::PointXYZHSV>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZHSV>("v", pcl::ComparisonOps::GT, 0.039)));
@@ -165,42 +165,12 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     if (debug) {
 	publishPurpleMask(xyzCloudRGBfiltered, cloudMsg->header.frame_id);
     }
-
-    // create a pcl object to hold the ransac filtered results
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr xyzCloudPtrRansacFiltered(new pcl::PointCloud<pcl::PointXYZRGB>);
-
-    // perform ransac planar filtration to remove table top
-    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
-    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-    // Create the segmentation object
-    pcl::SACSegmentation<pcl::PointXYZRGB> seg1;
-    // Optional
-    seg1.setOptimizeCoefficients(true);
-    // Mandatory
-    seg1.setModelType (pcl::SACMODEL_PLANE);
-    seg1.setMethodType (pcl::SAC_RANSAC);
-    seg1.setDistanceThreshold(0.04);
-
-    seg1.setInputCloud (xyzCloudRGBfiltered);
-    seg1.segment (*inliers, *coefficients);
-
-    // Create the filtering object
-    pcl::ExtractIndices<pcl::PointXYZRGB> extract;
-
-    //extract.setInputCloud (xyzCloudPtrFiltered);
-    extract.setInputCloud(xyzCloudRGBfiltered);
-    extract.setIndices(inliers);
-    extract.setNegative(true);
-    extract.filter(*xyzCloudPtrRansacFiltered);
-
-//    publishPointCloud(xyzCloudPtrRansacFiltered, cloudMsg->header.frame_id);
-    ROS_INFO("Applied RANSAC filter");
-
+    
     // perform euclidean cluster segmentation to seporate individual objects
 
     // Create the KdTree object for the search method of the extraction
     pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>);
-    tree->setInputCloud (xyzCloudPtrRansacFiltered);
+    tree->setInputCloud (xyzCloudRGBfiltered);
 
     // create the extraction object for the clusters
     std::vector<pcl::PointIndices> cluster_indices_list;
@@ -210,7 +180,7 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
     ec.setMinClusterSize (100);
     ec.setMaxClusterSize (25000);
     ec.setSearchMethod(tree);
-    ec.setInputCloud(xyzCloudPtrRansacFiltered);
+    ec.setInputCloud(xyzCloudRGBfiltered);
     // exctract the indices pertaining to each cluster and store in a vector of pcl::PointIndices
     ec.extract(cluster_indices_list);
 
@@ -236,10 +206,10 @@ void ClusterSegmentation::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &
 
 	for (const int index : cluster_indices.indices)
         {
-	    xyzCloudPtrRansacFiltered->points[index].r = red;
-	    xyzCloudPtrRansacFiltered->points[index].g = green;
-	    xyzCloudPtrRansacFiltered->points[index].b = blue;
-            clusterPtr->points.push_back(xyzCloudPtrRansacFiltered->points[index]);
+	    xyzCloudRGBfiltered->points[index].r = red;
+	    xyzCloudRGBfiltered->points[index].g = green;
+	    xyzCloudRGBfiltered->points[index].b = blue;
+            clusterPtr->points.push_back(xyzCloudRGBfiltered->points[index]);
         }
 
         // convert to pcl::PCLPointCloud2

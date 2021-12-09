@@ -2,7 +2,7 @@
 
 <launch>
 
-  <arg name="world_name" value="vineyard_stage3"/>
+  <arg name="world_name" value="vineyard_stage4"/>
   <arg name="paused"     value="false"/>
 
   <!-- Spawn Gazebo + Thorvald -->
