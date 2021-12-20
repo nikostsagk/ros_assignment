@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import random as rng
 import rospy
+import message_filters
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from dynamic_reconfigure.server import Server
@@ -14,13 +15,21 @@ class image_converter:
     def __init__(self):
 
         self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_raw")
+        self.depth_topic = rospy.get_param("~depth_topic", "/depth_registered/image_rect")
 
         self.bridge = CvBridge()
-        self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
+        #self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
         self.purple_mask_pub = rospy.Publisher("~purple_mask", Image, queue_size=1)
         self.debug_pub = rospy.Publisher("~debug", Image, queue_size=1)
 
         self.dyn_reconf_srv = Server(HsvConfig, self.dyn_reconf_callback)
+
+        subscribers = [
+                message_filters.Subscriber(self.image_topic, Image),
+                message_filters.Subscriber(self.depth_topic, Image),
+                ]
+        self.ts = message_filters.ApproximateTimeSynchronizer(subscribers, 1, 0.1, allow_headerless=True)
+        self.ts.registerCallback(self.image_callback)
 
     def dyn_reconf_callback(self, config, level):
         self.config = config
@@ -37,9 +46,12 @@ class image_converter:
         mask = cv2.inRange(hsv_image, lower_filter_r, upper_filter_r)
         return mask
 
-    def image_callback(self, data):
+    def image_callback(self, rgb_data, depth_data):
         # imsgmsg to cv2
-        cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
+
+        # depthmsg to cv2
+        cv_depth = self.bridge.imgmsg_to_cv2(depth_data, "32FC1")
 
         # Filter out anything but purple
         purple_mask = self.colour_filter(cv_image)
@@ -81,9 +93,14 @@ class image_converter:
         # Assign id to each contour and colorise it
         cv2.watershed(result, markers)
         labels = np.unique(markers)
+        depths = []
         for n, label in enumerate(labels[1::]):
             ix, iy = np.where(markers == label)
             result[ix,iy,:] = colors[n]
+
+            # Find depth values
+            depth = np.nanmedian(cv_depth[ix,iy])
+            depths.append(depth)
 
         #result = cv2.bitwise_and(mask_rgb, markers)
         
@@ -101,10 +118,10 @@ class image_converter:
 
         # cv2 to imgmsg
         mask_msg = self.bridge.cv2_to_imgmsg(mask, "mono8")
-        mask_msg.header = data.header
+        mask_msg.header = rgb_data.header
 
         result_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
-        result_msg.header = data.header
+        result_msg.header = rgb_data.header
 
         # publish masks
         self.purple_mask_pub.publish(mask_msg)
