@@ -44,47 +44,53 @@ class image_converter:
         # Filter out anything but purple
         purple_mask = self.colour_filter(cv_image)
 
-        # Debug
-        kernel = np.ones((9,9), dtype=np.uint8)
-        kernel2 = np.ones((13,13), dtype=np.uint8)
-        debug = purple_mask
-        #debug = cv2.morphologyEx(debug, cv2.MORPH_DILATE, kernel)
-        debug = cv2.morphologyEx(debug, cv2.MORPH_CLOSE, kernel)
-        debug = cv2.morphologyEx(debug, cv2.MORPH_OPEN, kernel2)
-        purple_mask = debug#cv2.morphologyEx(purple_mask, cv2.MORPH_OPEN, kernel2)
+        # Preprocessing
+        kernel_close = np.ones((9,9), dtype=np.uint8)
+        mask = cv2.morphologyEx(purple_mask, cv2.MORPH_CLOSE, kernel_close)
+        
+        kernel_open = np.ones((13,13), dtype=np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
-        _, contours, _ = cv2.findContours(debug, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        markers = np.zeros(debug.shape, dtype=np.int32)
+        # Find contours
+        _, contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        markers = np.zeros(mask.shape, dtype=np.int32)
 
         centers = []
         colors = []
         for i, c in enumerate(contours):
             area = cv2.contourArea(c)
+            # Filter out small areas (re-think about this)
             if area > 500:
+                # Found centroids of contours
                 M = cv2.moments(c)
                 cX = int(M["m10"]/M["m00"])
                 cY = int(M["m01"]/M["m00"])
-                centers.append((cX, cY))
-                #cv2.drawContours(markers, [c], -1, (i+1), -1)
+                
+                # Draw centroids
                 cv2.circle(markers, (cX,cY), 10, (i+1), -1)
-                colors.append((rng.randint(0, 256), rng.randint(0,256), rng.randint(0,256)))
-        markers_8u = (markers*10).astype("uint8")
+                
+                # Append random color for each contour
+                color = (rng.randint(0, 256), rng.randint(0,256), rng.randint(0,256))
+                
+                centers.append((cX, cY))
+                colors.append(color)
 
-        purple_mask_rgb = np.dstack([purple_mask, purple_mask, purple_mask])
-        purple_mask_3d = np.dstack([purple_mask, purple_mask, purple_mask])
-        
-        cv2.watershed(purple_mask_rgb, markers)
+        # mask to RGB
+        result = np.dstack([mask, mask, mask])
 
+        # Assign id to each contour and colorise it
+        cv2.watershed(result, markers)
         labels = np.unique(markers)
         for n, label in enumerate(labels[1::]):
             ix, iy = np.where(markers == label)
-            purple_mask_rgb[ix,iy,:] = colors[n]
+            result[ix,iy,:] = colors[n]
 
-        debug = cv2.bitwise_and(purple_mask_rgb, purple_mask_3d)
-         
+        #result = cv2.bitwise_and(mask_rgb, markers)
+        
+        # Draw bounding boxes around contours
         bboxes = []
         for n, color in enumerate(colors):
-            ix, iy = np.where(np.all(debug == color, axis=-1))
+            ix, iy = np.where(np.all(result == color, axis=-1))
             try:
                 x0, x1 = min(ix), max(ix)
                 y0, y1 = min(iy), max(iy)
@@ -94,15 +100,15 @@ class image_converter:
                 continue
 
         # cv2 to imgmsg
-        purple_mask_msg = self.bridge.cv2_to_imgmsg(purple_mask, "mono8")
-        purple_mask_msg.header = data.header
+        mask_msg = self.bridge.cv2_to_imgmsg(mask, "mono8")
+        mask_msg.header = data.header
 
-        debug_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
-        debug_msg.header = data.header
+        result_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
+        result_msg.header = data.header
 
         # publish masks
-        self.purple_mask_pub.publish(purple_mask_msg)
-        self.debug_pub.publish(debug_msg)
+        self.purple_mask_pub.publish(mask_msg)
+        self.debug_pub.publish(result_msg)
 
 def main():
     ic = image_converter()
