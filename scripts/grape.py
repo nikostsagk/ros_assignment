@@ -116,7 +116,7 @@ class image_converter:
         marker_pose = ros_numpy.numpify(marker.pose.position)
         for m in self.markers[::2]:
             mpose = ros_numpy.numpify(m.pose.position)
-            if np.linalg.norm(marker_pose - mpose) <= 2*max(marker.scale.x, m.scale.x):
+            if np.linalg.norm(marker_pose - mpose) <= 3*max(marker.scale.x, m.scale.x):
                 return True
         return False
 
@@ -132,107 +132,92 @@ class image_converter:
         purple_mask = self.colour_filter(cv_image)
 
         # Preprocessing
-        kernel_close = np.ones((17,17), dtype=np.uint8)
+        kernel_close = np.ones((15,15), dtype=np.uint8)
         mask = cv2.morphologyEx(purple_mask, cv2.MORPH_CLOSE, kernel_close)
         
-        kernel_open = np.ones((17,17), dtype=np.uint8)
+        kernel_open = np.ones((15,15), dtype=np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
         # Find contours
         _, contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         markers = np.zeros(mask.shape, dtype=np.int32)
 
-        print("Preprocessing, and contours:", time.time() - now)
-        
+        mask = np.dstack([mask, mask, mask])
+
         centers = []
         colors = []
+        depths = []
         for i, c in enumerate(contours):
             area = cv2.contourArea(c)
             # Filter out small areas (re-think about this)
             if area > 500:
+                # Append random color for each contour
+                rng.seed(i)
+                color = (rng.randint(0, 256), rng.randint(0,256), rng.randint(0,256))
+                
                 # Found centroids of contours
                 M = cv2.moments(c)
                 cX = int(M["m10"]/M["m00"])
                 cY = int(M["m01"]/M["m00"])
                 
-                # Draw centroids
-                cv2.circle(markers, (cX,cY), 10, (i+1), -1)
+                # Segment image
+                cv2.drawContours(mask, [c], 0, color, -1)
+                ix, iy = np.where(np.all(mask == color, axis=-1))
                 
-                # Append random color for each contour
-                rng.seed(i)
-                color = (rng.randint(0, 256), rng.randint(0,256), rng.randint(0,256))
+                # Find depth
+                depth = np.nanmedian(cv_depth[cY,cX])
                 
-                centers.append((cX, cY))
-                colors.append(color)
-
-        # mask to RGB
-        result = np.dstack([mask, mask, mask])
-
-        # Assign id to each contour and colorise it
-        cv2.watershed(result, markers)
-        labels = np.unique(markers)
-        depths = []
-        for n, label in enumerate(labels[1::]):
-            ix, iy = np.where(markers == label)
-            result[ix,iy,:] = colors[n]
-
-            # Find depth values
-            depth = np.nanmedian(cv_depth[ix,iy])
-            depths.append(depth)
-
-        print("Segment mask and find centroids:", time.time() - now)
-
-        # Draw bounding boxes around contours
-        bboxes = []
-        for n, color in enumerate(colors):
-            ix, iy = np.where(np.all(result == color, axis=-1))
-            if True:
-                x0, x1 = min(ix), max(ix)
-                y0, y1 = min(iy), max(iy)
-                # Ignore misslocalisations and grapes from other rows
-                if ((y1 - y0) * (x1 - x0) < 0.5e5) and (depths[n] < 3.0):
-                    # Debug
-                    cv2.rectangle(cv_image, (y0, x0), (y1, x1), color, thickness=3)
-                    cv2.circle(cv_image, centers[n], 10, color, -1)
+                try:
+                    # Get bounding box
+                    x0, x1 = min(ix), max(ix)
+                    y0, y1 = min(iy), max(iy)
+                    # Ignore grapes that they're too far
+                    if depth < 3.0:
+                    #if ((y1 - y0) * (x1 - x0) < 0.5e5) and (depths[n] < 3.0):
+                        # Debug
+                        cv2.rectangle(mask, (y0, x0), (y1, x1), color, thickness=3)
                     
-                    # Find pose
-                    real_p1 = self.camera_model.projectPixelTo3dRay((x0, y0))
-                    real_p2 = self.camera_model.projectPixelTo3dRay((x1, y1))
-                    real_point = np.asarray(self.camera_model.projectPixelTo3dRay(centers[n]))
-                    width = depths[n] * abs(real_p1[0] - real_p2[0])
-                    height = depths[n] * abs(real_p1[1] - real_p2[1])
-                    radius = max(width, height)
-                    pose_vector = (1. / real_point[2]) * real_point
-                    pose = pose_vector * depths[n]
-                    now = time.time()
-                    marker, text_marker = self.marker(rgb_data.header.frame_id, radius, color, pose)
-                    print(time.time() - now)
-                    # Check duplicates
-                    if not self.is_duplicate(marker):
-                        self.marker_id += 1
-                        self.markers.append(marker)
-                        self.markers.append(text_marker)
-            #except:
-            #    continue
-
-        print("Find markers duplicates etc:", time.time() - now)
-
+                        # Find pose
+                        real_p1 = self.camera_model.projectPixelTo3dRay((x0, y0))
+                        real_p2 = self.camera_model.projectPixelTo3dRay((x1, y1))
+                        real_point = np.asarray(self.camera_model.projectPixelTo3dRay((cX,cY)))
+                        width = depth * abs(real_p1[0] - real_p2[0])
+                        height = depth * abs(real_p1[1] - real_p2[1])
+                        radius = 0.15#max(width, height)
+                        pose_vector = (1. / real_point[2]) * real_point
+                        pose = pose_vector * depth
+                        marker, text_marker = self.marker(rgb_data.header.frame_id, radius, color, pose)
+                    
+                        # Check duplicates
+                        if not self.is_duplicate(marker):
+                            self.marker_id += 1
+                            self.markers.append(marker)
+                            self.markers.append(text_marker)
+                
+                        centers.append((cX, cY))
+                        colors.append(color)
+                        depths.append(depth)
+                
+                        # Draw centroids and bounding boxes
+                        cv2.circle(mask, (cX,cY), 5, (0,255,0), -1)
+                        cv2.rectangle(mask, (y0, x0), (y1, x1), color, thickness=3)
+                except:
+                    continue
+                
         marker_array = MarkerArray()
         marker_array.markers = self.markers
         self.marker_pub.publish(marker_array)
         
         # cv2 to imgmsg
-        mask_msg = self.bridge.cv2_to_imgmsg(mask, "mono8")
+        mask_msg = self.bridge.cv2_to_imgmsg(purple_mask, "mono8")
         mask_msg.header = rgb_data.header
 
-        result_msg = self.bridge.cv2_to_imgmsg(cv_image, "bgr8")
+        result_msg = self.bridge.cv2_to_imgmsg(mask, "bgr8")
         result_msg.header = rgb_data.header
 
         # publish masks
         self.purple_mask_pub.publish(mask_msg)
         self.debug_pub.publish(result_msg)
-
-        print(time.time() - now)
 
 def main():
     ic = image_converter()

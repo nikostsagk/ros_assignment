@@ -2,10 +2,10 @@
 
 <launch>
 
-  <arg name="rgb_camera_info"   default="/thorvald_001/kinect2_right_camera/hd/camera_info"/>
-  <arg name="rgb_image"         default="/thorvald_001/kinect2_right_camera/hd/image_color_rect"/>
-  <arg name="depth_camera_info" default="/thorvald_001/kinect2_right_sensor/sd/camera_info"/>
-  <arg name="depth_image"       default="/thorvald_001/kinect2_right_sensor/sd/image_depth_rect"/>
+  <arg name="rgb_camera_info"   default="/thorvald_001/kinect2_front_camera/hd/camera_info"/>
+  <arg name="rgb_image"         default="/thorvald_001/kinect2_front_camera/hd/image_color_rect"/>
+  <arg name="depth_camera_info" default="/thorvald_001/kinect2_front_sensor/sd/camera_info"/>
+  <arg name="depth_image"       default="/thorvald_001/kinect2_front_sensor/sd/image_depth_rect"/>
   
   <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" />
 
