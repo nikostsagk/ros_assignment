@@ -4,13 +4,17 @@ import cv2
 import numpy as np
 import random as rng
 from image_geometry import PinholeCameraModel
+
 import rospy
+import ros_numpy
 import message_filters
+import tf
+from cv_bridge import CvBridge
+from dynamic_reconfigure.server import Server
+import time
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import Marker, MarkerArray
-from cv_bridge import CvBridge
-from dynamic_reconfigure.server import Server
 
 from ros_assignment.cfg import HsvConfig
 
@@ -19,16 +23,17 @@ class image_converter:
 
         self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_raw")
         self.depth_topic = rospy.get_param("~depth_topic", "/depth_registered/image_rect")
-        self.camera_info = rospy.wait_for_message("/thorvald_001/kinect2_right_camera/hd/camera_info", CameraInfo)
+        self.camera_info = rospy.wait_for_message("/thorvald_001/kinect2_front_camera/hd/camera_info", CameraInfo)
         self.camera_model = PinholeCameraModel()
         self.camera_model.fromCameraInfo(self.camera_info)
         
         self.bridge = CvBridge()
-        #self.image_sub = rospy.Subscriber(self.image_topic, Image, self.image_callback)
+        self.tf_listener = tf.TransformListener()
         self.purple_mask_pub = rospy.Publisher("~purple_mask", Image, queue_size=1)
         self.debug_pub = rospy.Publisher("~debug", Image, queue_size=1)
         self.marker_pub = rospy.Publisher("~markers", MarkerArray, queue_size=1)
-        self.marker_seq = 0
+        self.marker_id = 0
+        self.markers = []
 
         self.dyn_reconf_srv = Server(HsvConfig, self.dyn_reconf_callback)
 
@@ -54,14 +59,17 @@ class image_converter:
         mask = cv2.inRange(hsv_image, lower_filter_r, upper_filter_r)
         return mask
 
-    def marker(self, frame_id, id, radius, color, pose):
+    def marker(self, frame_id, radius, color, pose):
+
+        now = rospy.Time.now()
+
         marker = Marker()
         marker.header.frame_id = frame_id
-        marker.header.stamp = rospy.Time.now()
-        marker.header.seq = self.marker_seq
+        marker.header.stamp = now
+        #marker.header.seq = 0
         marker.type = 2
-        marker.id = id
-        marker.lifetime = rospy.Duration(0.2)
+        marker.id = self.marker_id
+        marker.lifetime = rospy.Duration(10.2)
         #marker.text = str(id)
         marker.ns = "ros_assignment/grape_2d_segmentation/markers"
         marker.scale.x = radius
@@ -76,11 +84,44 @@ class image_converter:
         marker.pose.position.z = pose[2]
         marker.pose.orientation.w = 1.0
 
-        self.marker_seq += 1
+        text_marker = Marker()
+        text_marker.header.frame_id = frame_id
+        text_marker.header.stamp = now
+        #text_marker.header.seq = self.marker_seq
+        text_marker.ns = marker.ns
+        text_marker.id = - self.marker_id - 1000
+        text_marker.type = 9
+        text_marker.text = str(self.marker_id)
+        text_marker.pose.position.x = pose[0]
+        text_marker.pose.position.y = pose[1] - marker.scale.y
+        text_marker.pose.position.z = pose[2] 
+        text_marker.scale.z = marker.scale.z
+        text_marker.color = marker.color
+        text_marker.lifetime = marker.lifetime
+        
+        #self.marker_seq += 1
 
-        return marker
+        # Transform Pose
+        self.tf_listener.waitForTransform("map", frame_id, rospy.Time.now(), rospy.Duration(2.0))
+        new_pose_m = self.tf_listener.transformPose("map", marker)
+        new_pose_t = self.tf_listener.transformPose("map", text_marker)
+        marker.pose = new_pose_m.pose
+        text_marker.pose = new_pose_t.pose
+        marker.header.frame_id = "map"
+        text_marker.header.frame_id = "map"
+
+        return marker, text_marker
+
+    def is_duplicate(self, marker):
+        marker_pose = ros_numpy.numpify(marker.pose.position)
+        for m in self.markers[::2]:
+            mpose = ros_numpy.numpify(m.pose.position)
+            if np.linalg.norm(marker_pose - mpose) <= 2*max(marker.scale.x, m.scale.x):
+                return True
+        return False
 
     def image_callback(self, rgb_data, depth_data):
+        now = time.time()
         # imsgmsg to cv2
         cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
 
@@ -101,6 +142,8 @@ class image_converter:
         _, contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         markers = np.zeros(mask.shape, dtype=np.int32)
 
+        print("Preprocessing, and contours:", time.time() - now)
+        
         centers = []
         colors = []
         for i, c in enumerate(contours):
@@ -137,11 +180,10 @@ class image_converter:
             depth = np.nanmedian(cv_depth[ix,iy])
             depths.append(depth)
 
-        #result = cv2.bitwise_and(mask_rgb, markers)
-        
+        print("Segment mask and find centroids:", time.time() - now)
+
         # Draw bounding boxes around contours
         bboxes = []
-        markers = []
         for n, color in enumerate(colors):
             ix, iy = np.where(np.all(result == color, axis=-1))
             if True:
@@ -152,6 +194,7 @@ class image_converter:
                     # Debug
                     cv2.rectangle(cv_image, (y0, x0), (y1, x1), color, thickness=3)
                     cv2.circle(cv_image, centers[n], 10, color, -1)
+                    
                     # Find pose
                     real_p1 = self.camera_model.projectPixelTo3dRay((x0, y0))
                     real_p2 = self.camera_model.projectPixelTo3dRay((x1, y1))
@@ -161,13 +204,21 @@ class image_converter:
                     radius = max(width, height)
                     pose_vector = (1. / real_point[2]) * real_point
                     pose = pose_vector * depths[n]
-                    marker = self.marker(rgb_data.header.frame_id, n, radius, color, pose)
-                    markers.append(marker)
+                    now = time.time()
+                    marker, text_marker = self.marker(rgb_data.header.frame_id, radius, color, pose)
+                    print(time.time() - now)
+                    # Check duplicates
+                    if not self.is_duplicate(marker):
+                        self.marker_id += 1
+                        self.markers.append(marker)
+                        self.markers.append(text_marker)
             #except:
             #    continue
 
+        print("Find markers duplicates etc:", time.time() - now)
+
         marker_array = MarkerArray()
-        marker_array.markers = markers
+        marker_array.markers = self.markers
         self.marker_pub.publish(marker_array)
         
         # cv2 to imgmsg
@@ -180,6 +231,8 @@ class image_converter:
         # publish masks
         self.purple_mask_pub.publish(mask_msg)
         self.debug_pub.publish(result_msg)
+
+        print(time.time() - now)
 
 def main():
     ic = image_converter()
