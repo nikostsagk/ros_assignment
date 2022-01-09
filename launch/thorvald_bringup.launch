@@ -4,13 +4,25 @@
 
   <arg name="world_name" value="vineyard_stage4"/>
   <arg name="paused"     value="false"/>
-  <arg name="launch_move_base" default="true"/>
+  <arg name="launch_move_base" default="false"/>
+  <arg name="rviz_config_file" default="$(find bacchus_gazebo)/rviz/rviz_assignment.rviz"/>
+  <arg name="nav_map_yaml" value="$(find bacchus_gazebo)/maps/new_map.yaml"/>
+  <arg name="tmap" value="data_collection"/>
 
   <!-- Spawn Gazebo + Thorvald -->
   <include file="$(find bacchus_gazebo)/launch/vineyard_demo.launch">
     <arg name="world_name" value="$(arg world_name)"/>
     <arg name="paused"     value="$(arg paused)"/>
     <arg name="launch_move_base" value="$(arg launch_move_base)"/>
+    <arg name="rviz_config_file" value="$(arg rviz_config_file)"/>
+    <arg name="nav_map_yaml" value="$(arg nav_map_yaml)"/>
   </include>
+
+  <include file="$(find uol_cmp9767m_tutorial)/launch/move_base.launch">
+  </include>
+
+  <!-- <include file="$(find uol_cmp9767m_tutorial)/launch/topo_nav.launch">
+    <arg name="tmap" value="$(arg tmap)"/>
+  </include> -->
 
 </launch>
