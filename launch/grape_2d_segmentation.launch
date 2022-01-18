@@ -2,15 +2,11 @@
 
 <launch>
 
-  <arg name="image_topic"  default="/thorvald_001/kinect2_front_camera/hd/image_color_rect"/>
-
-  <group ns="ros_assignment">
+  <arg name="camera_info"  default="/thorvald_001/kinect2_front_camera/hd/camera_info"/>
 
   <!-- Start grape 2D annotation -->
   <node pkg="ros_assignment" type="grape.py" name="grape_2d_segmentation" output="screen">
-    <param name="image_topic" value="$(arg image_topic)"/>
+    <param name="camera_info" value="$(arg camera_info)"/>
   </node>
-
-  </group>
 
 </launch>

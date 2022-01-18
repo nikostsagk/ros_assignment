@@ -2,14 +2,14 @@
 
 <launch>
 
-  <arg name="rgb_camera_info"   value="/thorvald_001/kinect2_right_camera/hd/camera_info"/>
-  <arg name="rgb_image"         value="/thorvald_001/kinect2_right_camera/hd/image_color_rect"/>
-  <arg name="depth_camera_info" value="/thorvald_001/kinect2_right_sensor/sd/camera_info"/>
-  <arg name="depth_image"       value="/thorvald_001/kinect2_right_sensor/sd/image_depth_rect"/>
+  <arg name="rgb_camera_info"   value="/thorvald_001/kinect2_front_camera/hd/camera_info"/>
+  <arg name="rgb_image"         value="/thorvald_001/kinect2_front_camera/hd/image_color_rect"/>
+  <arg name="depth_camera_info" value="/thorvald_001/kinect2_front_sensor/sd/camera_info"/>
+  <arg name="depth_image"       value="/thorvald_001/kinect2_front_sensor/sd/image_depth_rect"/>
   
-  <arg name="input_cloud_topic" value="/ros_assignment/depth_registered/points"/>
-  <arg name="debug"             value="false"/>
-  
+  <!--<arg name="input_cloud_topic" value="/ros_assignment/depth_registered/points"/>
+  <arg name="debug"             value="false"/>-->
+
   <group ns="ros_assignment">
 	  
     <!-- Register depth to RGB + publish RGB pointcloud -->
@@ -21,9 +21,13 @@
     </include>
 
     <!-- Start PCL clustering -->
-    <include file="$(find ros_assignment)/launch/cluster_segmentation.launch">
+    <!--<include file="$(find ros_assignment)/launch/cluster_segmentation.launch">
       <arg name="input_cloud_topic" value="$(arg input_cloud_topic)"/>
       <arg name="debug"             value="$(arg debug)"/>
+    </include>-->
+
+    <include file="$(find ros_assignment)/launch/grape_2d_segmentation.launch">
+      <arg name="camera_info" value="$(arg rgb_camera_info)"/>
     </include>
 
    </group>

@@ -12,37 +12,30 @@ import tf
 from cv_bridge import CvBridge
 from dynamic_reconfigure.server import Server
 import time
+from std_msgs.msg import Int16
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from visualization_msgs.msg import Marker, MarkerArray
 
 from ros_assignment.cfg import HsvConfig
+from ros_assignment.srv import getGrapes, getGrapesResponse
 
 class image_converter:
     def __init__(self):
 
-        self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_raw")
-        self.depth_topic = rospy.get_param("~depth_topic", "/depth_registered/image_rect")
-        self.camera_info = rospy.wait_for_message("/thorvald_001/kinect2_front_camera/hd/camera_info", CameraInfo)
+        self.camera_info = rospy.wait_for_message(rospy.get_param("~camera_info"), CameraInfo)
         self.camera_model = PinholeCameraModel()
         self.camera_model.fromCameraInfo(self.camera_info)
-        
+       
         self.bridge = CvBridge()
         self.tf_listener = tf.TransformListener()
-        self.purple_mask_pub = rospy.Publisher("~purple_mask", Image, queue_size=1)
-        self.debug_pub = rospy.Publisher("~debug", Image, queue_size=1)
         self.marker_pub = rospy.Publisher("~markers", MarkerArray, queue_size=1)
         self.marker_id = 0
         self.markers = []
 
+        # ROS Services
+        rospy.Service("get_grapes", getGrapes, self.get_grapes)
         self.dyn_reconf_srv = Server(HsvConfig, self.dyn_reconf_callback)
-
-        subscribers = [
-                message_filters.Subscriber(self.image_topic, Image),
-                message_filters.Subscriber(self.depth_topic, Image),
-                ]
-        self.ts = message_filters.ApproximateTimeSynchronizer(subscribers, 1, 0.1, allow_headerless=True)
-        self.ts.registerCallback(self.image_callback)
 
     def dyn_reconf_callback(self, config, level):
         self.config = config
@@ -52,25 +45,14 @@ class image_converter:
               print i[0], "set to:", getattr(self, i[0])
         return config
 
-    def colour_filter(self, image):
-        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        lower_filter_r = np.array([self.config["H_min"], self.config["S_min"], self.config["V_min"]])
-        upper_filter_r = np.array([self.config["H_max"], self.config["S_max"], self.config["V_max"]])
-        mask = cv2.inRange(hsv_image, lower_filter_r, upper_filter_r)
-        return mask
-
-    def marker(self, frame_id, radius, color, pose):
-
-        now = rospy.Time.now()
+    def marker(self, stamp, frame_id, radius, color, pose):
 
         marker = Marker()
         marker.header.frame_id = frame_id
-        marker.header.stamp = now
-        #marker.header.seq = 0
+        marker.header.stamp = stamp
         marker.type = 2
         marker.id = self.marker_id
-        marker.lifetime = rospy.Duration(10.2)
-        #marker.text = str(id)
+        marker.lifetime = rospy.Duration(10.0)
         marker.ns = "ros_assignment/grape_2d_segmentation/markers"
         marker.scale.x = radius
         marker.scale.y = radius
@@ -86,8 +68,7 @@ class image_converter:
 
         text_marker = Marker()
         text_marker.header.frame_id = frame_id
-        text_marker.header.stamp = now
-        #text_marker.header.seq = self.marker_seq
+        text_marker.header.stamp = stamp
         text_marker.ns = marker.ns
         text_marker.id = - self.marker_id - 1000
         text_marker.type = 9
@@ -99,10 +80,8 @@ class image_converter:
         text_marker.color = marker.color
         text_marker.lifetime = marker.lifetime
         
-        #self.marker_seq += 1
-
         # Transform Pose
-        self.tf_listener.waitForTransform("map", frame_id, rospy.Time.now(), rospy.Duration(2.0))
+        self.tf_listener.waitForTransform("map", frame_id, stamp, rospy.Duration(3.0))
         new_pose_m = self.tf_listener.transformPose("map", marker)
         new_pose_t = self.tf_listener.transformPose("map", text_marker)
         marker.pose = new_pose_m.pose
@@ -120,16 +99,16 @@ class image_converter:
                 return True
         return False
 
-    def image_callback(self, rgb_data, depth_data):
-        now = time.time()
-        # imsgmsg to cv2
-        cv_image = self.bridge.imgmsg_to_cv2(rgb_data, "bgr8")
+    def colour_filter(self, image):
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        lower_filter_r = np.array([self.config["H_min"], self.config["S_min"], self.config["V_min"]])
+        upper_filter_r = np.array([self.config["H_max"], self.config["S_max"], self.config["V_max"]])
+        mask = cv2.inRange(hsv_image, lower_filter_r, upper_filter_r)
+        return mask
 
-        # depthmsg to cv2
-        cv_depth = self.bridge.imgmsg_to_cv2(depth_data, "32FC1")
-
+    def preprocessing(self, image):
         # Filter out anything but purple
-        purple_mask = self.colour_filter(cv_image)
+        purple_mask = self.colour_filter(image)
 
         # Preprocessing
         kernel_close = np.ones((15,15), dtype=np.uint8)
@@ -137,11 +116,14 @@ class image_converter:
         
         kernel_open = np.ones((15,15), dtype=np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
+        return mask
+    
+    def image_callback(self, rgb_img, depth_img, frame_id, timestamp):
+        mask = self.preprocessing(rgb_img)
 
         # Find contours
         _, contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         markers = np.zeros(mask.shape, dtype=np.int32)
-
         mask = np.dstack([mask, mask, mask])
 
         centers = []
@@ -160,33 +142,29 @@ class image_converter:
                 cX = int(M["m10"]/M["m00"])
                 cY = int(M["m01"]/M["m00"])
                 
-                # Segment image
+                # Segment and colorise image
                 cv2.drawContours(mask, [c], 0, color, -1)
                 ix, iy = np.where(np.all(mask == color, axis=-1))
                 
                 # Find depth
-                depth = np.nanmedian(cv_depth[cY,cX])
+                depth = np.nanmedian(depth_img[cY,cX])
                 
                 try:
+                #if True:
                     # Get bounding box
                     x0, x1 = min(ix), max(ix)
                     y0, y1 = min(iy), max(iy)
                     # Ignore grapes that they're too far
                     if depth < 3.0:
-                    #if ((y1 - y0) * (x1 - x0) < 0.5e5) and (depths[n] < 3.0):
-                        # Debug
-                        cv2.rectangle(mask, (y0, x0), (y1, x1), color, thickness=3)
-                    
                         # Find pose
-                        real_p1 = self.camera_model.projectPixelTo3dRay((x0, y0))
-                        real_p2 = self.camera_model.projectPixelTo3dRay((x1, y1))
-                        real_point = np.asarray(self.camera_model.projectPixelTo3dRay((cX,cY)))
-                        width = depth * abs(real_p1[0] - real_p2[0])
-                        height = depth * abs(real_p1[1] - real_p2[1])
-                        radius = 0.15#max(width, height)
-                        pose_vector = (1. / real_point[2]) * real_point
-                        pose = pose_vector * depth
-                        marker, text_marker = self.marker(rgb_data.header.frame_id, radius, color, pose)
+                        real_p0 = self.camera_model.projectPixelTo3dRay((x0, y0))
+                        real_p1 = self.camera_model.projectPixelTo3dRay((x1, y1))
+                        real_pC = np.asarray(self.camera_model.projectPixelTo3dRay((cX,cY)))
+                        width = depth * abs(real_p0[0] - real_p1[0])
+                        height = depth * abs(real_p0[1] - real_p1[1])
+                        radius = max(width, height)
+                        pose = (1. / real_pC[2]) * real_pC * depth
+                        marker, text_marker = self.marker(timestamp, frame_id, radius, color, pose)
                     
                         # Check duplicates
                         if not self.is_duplicate(marker):
@@ -194,30 +172,27 @@ class image_converter:
                             self.markers.append(marker)
                             self.markers.append(text_marker)
                 
-                        centers.append((cX, cY))
-                        colors.append(color)
-                        depths.append(depth)
+                            centers.append((cX, cY))
+                            colors.append(color)
+                            depths.append(depth)
                 
-                        # Draw centroids and bounding boxes
-                        cv2.circle(mask, (cX,cY), 5, (0,255,0), -1)
-                        cv2.rectangle(mask, (y0, x0), (y1, x1), color, thickness=3)
                 except:
                     continue
                 
         marker_array = MarkerArray()
         marker_array.markers = self.markers
         self.marker_pub.publish(marker_array)
-        
-        # cv2 to imgmsg
-        mask_msg = self.bridge.cv2_to_imgmsg(purple_mask, "mono8")
-        mask_msg.header = rgb_data.header
+        return mask, centers
 
-        result_msg = self.bridge.cv2_to_imgmsg(mask, "bgr8")
-        result_msg.header = rgb_data.header
+    def get_grapes(self, req):
+        cv_rgb_img = self.bridge.imgmsg_to_cv2(req.rgb_image, "bgr8")
+        cv_dep_img = self.bridge.imgmsg_to_cv2(req.depth_image, "32FC1")
+        mask, centers = self.image_callback(cv_rgb_img, cv_dep_img, req.frame_id.data, req.timestamp.data)
+        mask = self.bridge.cv2_to_imgmsg(mask, "bgr8")
+        centers = Int16()
+        centers.data = 1
+        return getGrapesResponse(mask=mask, centers=centers)
 
-        # publish masks
-        self.purple_mask_pub.publish(mask_msg)
-        self.debug_pub.publish(result_msg)
 
 def main():
     ic = image_converter()
