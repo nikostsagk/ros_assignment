@@ -3,10 +3,14 @@
 <launch>
 
   <arg name="camera_info"  default="/thorvald_001/kinect2_front_camera/hd/camera_info"/>
+  <arg name="image_topic"  default="/thorvald_001/kinect2_front_camera/hd/image_color_rect"/>
+  <arg name="depth_topic"  default="/thorvald_001/kinect2_front_sensor/sd/image_depth_rect"/>
 
   <!-- Start grape 2D annotation -->
   <node pkg="ros_assignment" type="grape.py" name="grape_2d_segmentation" output="screen">
     <param name="camera_info" value="$(arg camera_info)"/>
+    <param name="image_topic" value="$(arg image_topic)"/>
+    <param name="depth_topic" value="$(arg depth_topic)"/>
   </node>
 
 </launch>

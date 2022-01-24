@@ -7,6 +7,7 @@
   <arg name="launch_move_base" default="false"/>
   <arg name="rviz_config_file" default="$(find bacchus_gazebo)/rviz/rviz_assignment.rviz"/>
   <arg name="nav_map_yaml" value="$(find bacchus_gazebo)/maps/new_map.yaml"/>
+  <arg name="tmap_file" value="$(find ros_assignment)/maps/test_new_map.yaml"/>
   <arg name="tmap" value="data_collection"/>
 
   <!-- Spawn Gazebo + Thorvald -->
@@ -18,11 +19,15 @@
     <arg name="nav_map_yaml" value="$(arg nav_map_yaml)"/>
   </include>
 
+  <!-- Launch it this way, as it's easier to debug -->
   <include file="$(find uol_cmp9767m_tutorial)/launch/move_base.launch">
   </include>
 
-  <!-- <include file="$(find uol_cmp9767m_tutorial)/launch/topo_nav.launch">
+  <!-- Launch topo_nav -->
+  <include file="$(find uol_cmp9767m_tutorial)/launch/topo_nav.launch">
     <arg name="tmap" value="$(arg tmap)"/>
-  </include> -->
+    <arg name="file" value="$(arg tmap_file)"/>
+    <arg name="load_map_from_file" value="true"/>
+  </include>
 
 </launch>
