@@ -4,7 +4,7 @@ import yaml
 import rospy
 import actionlib
 import message_filters
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String, Time
 from ros_assignment.srv import getGrapes
 
@@ -17,13 +17,15 @@ class topoNavClient:
         # Init
         self.rgb_image = None
         self.depth_image = None
+        self.camera_info = None
         self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_color_rect")
         self.depth_topic = rospy.get_param("~depth_topic", "/camera/depth/image_rect")
+        self.camera_info = rospy.get_param("~camera_info", "/camera/rgb/camera_info")
 
-        print(self.image_topic, self.depth_topic)
         subscribers = [
                 message_filters.Subscriber(self.image_topic, Image),
                 message_filters.Subscriber(self.depth_topic, Image),
+                message_filters.Subscriber(self.camera_info, CameraInfo),
                 ]
         self.ts = message_filters.ApproximateTimeSynchronizer(subscribers, 1, 0.1, allow_headerless=True)
         self.ts.registerCallback(self.image_callback)
@@ -37,9 +39,10 @@ class topoNavClient:
 
         self.main()
 
-    def image_callback(self, rgb_data, depth_data):
+    def image_callback(self, rgb_data, depth_data, camera_info):
         self.rgb_image = rgb_data
         self.depth_image = depth_data
+        self.camera_info = camera_info
 
     def load_nav_file(self, file):
         with open(file, 'r') as f:
@@ -66,7 +69,7 @@ class topoNavClient:
             frame_id.data = self.rgb_image.header.frame_id
             timestamp = Time()
             timestamp.data = self.rgb_image.header.stamp
-            resp = get_grapes(self.rgb_image, self.depth_image, frame_id, timestamp)
+            resp = get_grapes(self.rgb_image, self.depth_image, self.camera_info, frame_id, timestamp)
 
 
 if __name__ == '__main__':
