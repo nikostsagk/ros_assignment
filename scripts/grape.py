@@ -180,7 +180,6 @@ class detectionService:
         """
         # Filter out anything but purple
         mask = self.colour_filter(image)
-        binary_mask = np.copy(mask)
 
         # Preprocessing
         kernel = np.ones((15,15), dtype=np.uint8)
@@ -195,7 +194,6 @@ class detectionService:
             Mask -> Segmentation (contours) -> Centroids -> xyz
         """
         mask = self.preprocessing(rgb_img)
-        binary_mask = np.copy(mask)
 
         robot_name, camera_name = frame_id.split("/")
         closest_node = rospy.wait_for_message("/{:s}/closest_node".format(robot_name), String).data
@@ -223,7 +221,7 @@ class detectionService:
 
                 # Colorise each contour to find depth
                 # (essential step to get all the depth values and choose the median)
-                cimg = np.zeros_like(binary_mask)
+                cimg = np.zeros_like(mask)
                 cv2.drawContours(cimg, [c], 0, 255, -1)
                 ix, iy = np.where(cimg == 255)
                 depth = np.nanmedian(depth_img[ix, iy]) # ix,iy : the pixels of the segmented grape
@@ -265,6 +263,7 @@ class detectionService:
                                 rgb_img = cv2.putText(rgb_img, str(self.marker_id), (y1,x1+5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                             color, 2, cv2.FILLED)
                                 cv2.imwrite("{:s}/{:s}.png".format(path, camera_name), rgb_img)
+                                cv2.imwrite("{:s}/{:s}_binary.png".format(path, camera_name), mask)
 
                             self.marker_id += 1
                             self.markers.append(marker)
@@ -282,7 +281,7 @@ class detectionService:
         marker_array.markers = self.markers
         self.marker_pub.publish(marker_array)
 
-        return binary_mask, coordinates
+        return mask, coordinates
 
     def get_grapes(self, req):
         """
@@ -318,7 +317,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        rospy.init_node('image_converter')
+        rospy.init_node('detection_server')
         main()
         rospy.spin()
     except rospy.ROSInterruptException:

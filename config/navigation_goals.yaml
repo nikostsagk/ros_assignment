@@ -1,13 +1,10 @@
 thorvald_001:
   topological_map: "data_collection"
   rgb_image_topics: 
-   - "/thorvald_001/kinect2_top_left_camera/hd/image_color_rect"
    - "/thorvald_001/kinect2_top_right_camera/hd/image_color_rect"
   depth_image_topics:
-   - "/thorvald_001/kinect2_top_left_camera/depth_registered/image_rect"
    - "/thorvald_001/kinect2_top_right_camera/depth_registered/image_rect"
   camera_info_topics:
-   - "/thorvald_001/kinect2_top_left_camera/hd/camera_info"
    - "/thorvald_001/kinect2_top_right_camera/hd/camera_info"
   nodes:
     - "r0-cstart"
@@ -33,6 +30,8 @@ thorvald_001:
     - "r0-c19"
     - "r0-c20"
     - "r0-cend"
+  on_end:
+    - "r0-cstart"
 thorvald_002:
   topological_map: "data_collection"
   rgb_image_topics: 
@@ -68,3 +67,5 @@ thorvald_002:
     - "r1-c19"
     - "r1-c20"
     - "r1-cend"
+  on_end:
+    - "r1-cstart"
