@@ -5,26 +5,59 @@
   <arg name="world_name" value="vineyard_stage4"/>
   <arg name="paused"     value="false"/>
   <arg name="launch_move_base" default="false"/>
+  <arg name="fake_localisation" default="true"/>
   <arg name="rviz_config_file" default="$(find bacchus_gazebo)/rviz/rviz_assignment.rviz"/>
   <arg name="nav_map_yaml" value="$(find bacchus_gazebo)/maps/new_map.yaml"/>
   <arg name="tmap_file" value="$(find ros_assignment)/maps/test_new_map.yaml"/>
   <arg name="tmap" value="data_collection"/>
+
+  <arg name="multi_sim" default="false"/>
 
   <!-- Spawn Gazebo + Thorvald -->
   <include file="$(find bacchus_gazebo)/launch/vineyard_demo.launch">
     <arg name="world_name" value="$(arg world_name)"/>
     <arg name="paused"     value="$(arg paused)"/>
     <arg name="launch_move_base" value="$(arg launch_move_base)"/>
+    <arg name="fake_localisation" value="$(arg fake_localisation)"/>
     <arg name="rviz_config_file" value="$(arg rviz_config_file)"/>
     <arg name="nav_map_yaml" value="$(arg nav_map_yaml)"/>
+    <arg name="multi_sim" value="$(arg multi_sim)"/>
+  </include>
+
+  <!-- Run AMCL localisation -->
+  <include file="$(find ros_assignment)/launch/amcl.launch" unless="$(arg fake_localisation)">
+    <arg name="robot_name" value="thorvald_001"/>
+    <arg name="initial_pose_x" value="-11.0"/>
+    <arg name="initial_pose_y" value="12.0"/>
+    <arg name="initial_pose_z" value="0.0"/>
+  </include>
+
+  <include file="$(find ros_assignment)/launch/amcl.launch" unless="$(arg fake_localisation)">
+    <arg name="robot_name" value="thorvald_002"/>
+    <arg name="initial_pose_x" value="-11.0"/>
+    <arg name="initial_pose_y" value="8.0"/>
+    <arg name="initial_pose_z" value="0.0"/>
   </include>
 
   <!-- Launch it this way, as it's easier to debug -->
   <include file="$(find uol_cmp9767m_tutorial)/launch/move_base.launch">
+    <arg name="robot_name" value="thorvald_001"/>
+  </include> -->
+
+  <include file="$(find uol_cmp9767m_tutorial)/launch/move_base.launch">
+    <arg name="robot_name" value="thorvald_002"/>
   </include>
 
   <!-- Launch topo_nav -->
   <include file="$(find uol_cmp9767m_tutorial)/launch/topo_nav.launch">
+    <arg name="robot_name" value="thorvald_001"/>
+    <arg name="tmap" value="$(arg tmap)"/>
+    <arg name="file" value="$(arg tmap_file)"/>
+    <arg name="load_map_from_file" value="true"/>
+  </include>
+
+  <include file="$(find uol_cmp9767m_tutorial)/launch/topo_nav.launch">
+    <arg name="robot_name" value="thorvald_002"/>
     <arg name="tmap" value="$(arg tmap)"/>
     <arg name="file" value="$(arg tmap_file)"/>
     <arg name="load_map_from_file" value="true"/>

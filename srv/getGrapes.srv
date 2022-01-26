@@ -5,4 +5,4 @@ std_msgs/String frame_id
 std_msgs/Time timestamp
 ---
 sensor_msgs/Image mask
-std_msgs/Int16 centers
+std_msgs/Int16MultiArray coordinates

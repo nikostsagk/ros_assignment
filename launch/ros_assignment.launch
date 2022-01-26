@@ -4,53 +4,27 @@
 
   <arg name="namespace" value="ros_assignment"/>
 
-  <!-- List of cameras -->
-  <arg name="LEFT_namespace"         value="/thorvald_001/kinect2_top_left_camera"/>
-  <arg name="LEFT_rgb_camera_info"   value="/thorvald_001/kinect2_top_left_camera/hd/camera_info"/>
-  <arg name="LEFT_rgb_image"         value="/thorvald_001/kinect2_top_left_camera/hd/image_color_rect"/>
-  <arg name="LEFT_depth_camera_info" value="/thorvald_001/kinect2_top_left_sensor/sd/camera_info"/>
-  <arg name="LEFT_depth_image"       value="/thorvald_001/kinect2_top_left_sensor/sd/image_depth_rect"/>
+  <!-- number of robots -->
+  <arg name="nr" default="2"/>
 
-  <arg name="RIGHT_namespace"         value="/thorvald_001/kinect2_top_right_camera"/>
-  <arg name="RIGHT_rgb_camera_info"   value="/thorvald_001/kinect2_top_right_camera/hd/camera_info"/>
-  <arg name="RIGHT_rgb_image"         value="/thorvald_001/kinect2_top_right_camera/hd/image_color_rect"/>
-  <arg name="RIGHT_depth_camera_info" value="/thorvald_001/kinect2_top_right_sensor/sd/camera_info"/>
-  <arg name="RIGHT_depth_image"       value="/thorvald_001/kinect2_top_right_sensor/sd/image_depth_rect"/>
+  <!-- Register RGB + Depth -->
+  <!-- start recursively new node -->
+  <include file="$(find ros_assignment)/launch/register_depth.launch">
+    <arg name="nr" value="2"/>
+  </include>
 
   <arg name="nav_client_file"   value="$(find ros_assignment)/config/navigation_goals.yaml"/>
-
-  <arg name="debug"             value="false"/>
+  <arg name="logging"           value="true"/>
 
   <group ns="$(arg namespace)">
 
-    <!-- Register LEFT depth to RGB -->
-    <node pkg="nodelet" type="nodelet" name="LEFT_nodelet_manager" args="manager" />
-    <remap from="/$(arg namespace)/depth_registered/image_rect" to="$(arg LEFT_namespace)/depth_registered/image_rect"/>
-    <node pkg="nodelet" type="nodelet" name="LEFT_rgb_depth_register_node" args="load depth_image_proc/register LEFT_nodelet_manager">
-      <remap from="/$(arg namespace)/depth_registered/image_rect" to="$(arg LEFT_namespace)/depth_registered/image_rect"/>
-      <remap from="rgb/camera_info"   to="$(arg LEFT_rgb_camera_info)"/>
-      <remap from="depth/camera_info" to="$(arg LEFT_depth_camera_info)"/>
-      <remap from="depth/image_rect"  to="$(arg LEFT_depth_image)"/>
-    </node>
-
-    <!-- Register RIGHT depth to RGB -->
-    <node pkg="nodelet" type="nodelet" name="RIGHT_nodelet_manager" args="manager" />
-    <remap from="/$(arg namespace)/depth_registered/image_rect" to="$(arg RIGHT_namespace)/depth_registered/image_rect"/>
-    <node pkg="nodelet" type="nodelet" name="RIGHT_rgb_depth_register_node" args="load depth_image_proc/register RIGHT_nodelet_manager">
-      <remap from="/$(arg namespace)/depth_registered/image_rect" to="$(arg RIGHT_namespace)/depth_registered/image_rect"/>
-      <remap from="rgb/camera_info"   to="$(arg RIGHT_rgb_camera_info)"/>
-      <remap from="depth/camera_info" to="$(arg RIGHT_depth_camera_info)"/>
-      <remap from="depth/image_rect"  to="$(arg RIGHT_depth_image)"/>
-    </node>
-
     <!-- Start grape 2d segmentation service-->
-    <include file="$(find ros_assignment)/launch/grape_2d_segmentation.launch"/>
+    <include file="$(find ros_assignment)/launch/grape_2d_segmentation.launch">
+      <param name="logging" value="$(arg logging)"/>
+    </include>
 
     <!-- Start navigation client-->
     <node pkg="ros_assignment" name="navigation_client" type="set_topo_nav_goal.py" output="screen">
-      <param name="image_topic"     value="$(arg RIGHT_rgb_image)"/>
-      <param name="depth_topic"     value="$(arg RIGHT_namespace)/depth_registered/image_rect"/>
-      <param name="camera_info"     value="$(arg RIGHT_rgb_camera_info)"/>
       <param name="nav_client_file" value="$(arg nav_client_file)"/>
     </node>
 

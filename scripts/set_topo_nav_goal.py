@@ -1,9 +1,9 @@
 #! /usr/bin/env python
 
+import threading
 import yaml
 import rospy
 import actionlib
-import message_filters
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import String, Time
 from ros_assignment.srv import getGrapes
@@ -13,36 +13,61 @@ from topological_navigation.msg import GotoNodeAction, GotoNodeGoal
 class topoNavClient:
 
     def __init__(self):
+        """
+            Initiates an ActionClient and sends goals to the topological_navigation
+            In each node, grabs a frame, and calls the getGrapes service.
 
-        # Init
-        self.rgb_image = None
-        self.depth_image = None
-        self.camera_info = None
-        self.image_topic = rospy.get_param("~image_topic", "/camera/rgb/image_color_rect")
-        self.depth_topic = rospy.get_param("~depth_topic", "/camera/depth/image_rect")
-        self.camera_info = rospy.get_param("~camera_info", "/camera/rgb/camera_info")
-
-        subscribers = [
-                message_filters.Subscriber(self.image_topic, Image),
-                message_filters.Subscriber(self.depth_topic, Image),
-                message_filters.Subscriber(self.camera_info, CameraInfo),
-                ]
-        self.ts = message_filters.ApproximateTimeSynchronizer(subscribers, 1, 0.1, allow_headerless=True)
-        self.ts.registerCallback(self.image_callback)
+            Publishes:
+                 the resulting image with the drawn bounding boxes
+                 the binary HSV mask (for debugging purposes)
+        """
 
         self.yaml_file = rospy.get_param("~nav_client_file", None)
         self.config = self.load_nav_file(self.yaml_file)
 
-        # Start topo_nav client
-        self.client = actionlib.SimpleActionClient('/{:s}/topological_navigation'.format(self.config["robot"]), GotoNodeAction)
-        self.client.wait_for_server()
+        self.client = {}
+        
+        for robot in self.config.keys():
+            # Start topo_nav clients
+            self.client[robot] = actionlib.SimpleActionClient('/{:s}/topological_navigation'.format(robot), GotoNodeAction)
+            self.client[robot].wait_for_server()
+            rospy.loginfo("/{:s}/topological_navigation is ready".format(robot))
 
-        self.main()
+        threads = list()
+        for robot in self.config.keys():
+            x = threading.Thread(target=self.start, args=(robot,))
+            threads.append(x)
+            x.start()
+    
+    def start(self, robot):
+        for node in self.config[robot]["nodes"]:
+            self.gotoNode(robot, node)
+            for topics in zip(self.config[robot]["rgb_image_topics"],
+                            self.config[robot]["depth_image_topics"],
+                            self.config[robot]["camera_info_topics"]):
+                self.getGrapes(topics)
+    
+    def gotoNode(self, robot, node):
+        goal = GotoNodeGoal()
+        goal.target = node
+        self.client[robot].send_goal(goal)
+        status = self.client[robot].wait_for_result()
+        result = self.client[robot].get_result()
+        rospy.loginfo("result for {:s} for {:s} is {:s}".format(robot, node, result))
+    
+    def getGrapes(self, topics):
+        rospy.wait_for_service("/ros_assignment/get_grapes")
+        get_grapes = rospy.ServiceProxy("/ros_assignment/get_grapes", getGrapes)
 
-    def image_callback(self, rgb_data, depth_data, camera_info):
-        self.rgb_image = rgb_data
-        self.depth_image = depth_data
-        self.camera_info = camera_info
+        rgb_image = rospy.wait_for_message(topics[0], Image)
+        depth_image = rospy.wait_for_message(topics[1], Image)
+        camera_info = rospy.wait_for_message(topics[2], CameraInfo)
+
+        frame_id = String()
+        frame_id.data = rgb_image.header.frame_id
+        timestamp = Time()
+        timestamp.data = rospy.Time.now()#rgb_image.header.stamp
+        resp = get_grapes(rgb_image, depth_image, camera_info, frame_id, timestamp)
 
     def load_nav_file(self, file):
         with open(file, 'r') as f:
@@ -54,6 +79,8 @@ class topoNavClient:
 
     def main(self):
         for g in self.config["rows"]:
+
+            # topo_nav client
             goal = GotoNodeGoal()
             goal.target = g
             self.client.send_goal(goal)
@@ -62,14 +89,22 @@ class topoNavClient:
             rospy.loginfo("status for %s is %s", g, status)
             rospy.loginfo("result is %s", result)
 
+            # getGrapes client
             rospy.wait_for_service("/ros_assignment/get_grapes")
             get_grapes = rospy.ServiceProxy("/ros_assignment/get_grapes", getGrapes)
-            rospy.sleep(1.0)
+
+            # wait for messages. Unfortunately ApproximateTimeSynchroniser can't wait for only one message
+            rgb_image = rospy.wait_for_message(self.image_topic, Image)
+            depth_image = rospy.wait_for_message(self.depth_topic, Image)
+            camera_info = rospy.wait_for_message(self.camera_info, CameraInfo)
+
             frame_id = String()
-            frame_id.data = self.rgb_image.header.frame_id
+            frame_id.data = rgb_image.header.frame_id
             timestamp = Time()
-            timestamp.data = self.rgb_image.header.stamp
-            resp = get_grapes(self.rgb_image, self.depth_image, self.camera_info, frame_id, timestamp)
+            timestamp.data = rgb_image.header.stamp
+            resp = get_grapes(rgb_image, depth_image, camera_info, frame_id, timestamp)
+
+            rospy.loginfo("{:s}: {:d} grapes\n".format(g, len(resp.coordinates.data)/3))
 
 
 if __name__ == '__main__':
