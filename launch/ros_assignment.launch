@@ -5,12 +5,12 @@
   <arg name="namespace" value="ros_assignment"/>
 
   <!-- number of robots -->
-  <arg name="nr" default="2"/>
+  <arg name="nr" default="7"/>
 
   <!-- Register RGB + Depth -->
   <!-- start recursively new node -->
   <include file="$(find ros_assignment)/launch/register_depth.launch">
-    <arg name="nr" value="2"/>
+    <arg name="nr" value="$(arg nr)"/>
   </include>
 
   <arg name="nav_client_file"   value="$(find ros_assignment)/config/navigation_goals.yaml"/>
