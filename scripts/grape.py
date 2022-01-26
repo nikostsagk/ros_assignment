@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import os, errno
-from tokenize import String
 import cv2
 import numpy as np
 import random as rng
@@ -182,9 +181,10 @@ class detectionService:
         mask = self.colour_filter(image)
 
         # Preprocessing
-        kernel = np.ones((15,15), dtype=np.uint8)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(7,7))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
         return mask
 
     def image_callback(self, rgb_img, depth_img, camera_model, frame_id, timestamp):
@@ -209,7 +209,7 @@ class detectionService:
             area = cv2.contourArea(c)
             # Filter out small areas (re-consider this, it does automatically the robot
             # distance dependent)
-            if area > 500:
+            if area > 100:
                 # Append random color for each contour
                 rng.seed(i)
                 color = (rng.randint(0, 255), rng.randint(0,255), rng.randint(0,255))
@@ -229,30 +229,26 @@ class detectionService:
                 #try:
                 if True:
                     # Get bounding box in camera coordinates
-                    y0, x0, w, h = cv2.boundingRect(c)
-                    y1 = y0 + w
-                    x1 = x0 + h
+                    x0, y0, w, h = cv2.boundingRect(c)
+                    x1 = x0 + w
+                    y1 = y0 + h
 
 
                     # Ignore grapes that they're too far (avoid detecting back rows)
                     if depth < 3.0:
                         # Get world coordinates from image coordinates
-                        # real_p0: xyz of upper left bbox corner (for size estimation)
-                        # real_p1: xyz of bottom right bbox corner
-                        # real_pc: xyz of centroid
-                        real_p0 = camera_model.projectPixelTo3dRay((x0, y0))
-                        real_p1 = camera_model.projectPixelTo3dRay((x1, y1))
-                        real_pC = np.asarray(camera_model.projectPixelTo3dRay((cX,cY)))
-                        width = depth * abs(real_p0[0] - real_p1[0])
-                        height = depth * abs(real_p0[1] - real_p1[1])
+                        # unit vector pointing the centroid
+                        unit_vector = np.asarray(camera_model.projectPixelTo3dRay((cX,cY)))
+                        width = camera_model.getDeltaX(w, depth)
+                        height = camera_model.getDeltaY(h, depth)
                         radius = max(width, height) # we assume they're circular
-                        pose = (1. / real_pC[2]) * real_pC * depth
+                        pose = (1. / unit_vector[2]) * unit_vector * depth
 
                         # Logging
                         if self.logging:
                             path = "{:s}/{:s}/{:s}".format(self.logging_dir, closest_node, robot_name)
                             mkdir(path)
-                            cv2.rectangle(rgb_img, (y0,x0), (y1,x1), color, 3)
+                            cv2.rectangle(rgb_img, (x0,y0), (x1,y1), color, 3)
 
                         # Get markers
                         marker, text_marker = self.marker(timestamp, frame_id, radius, color, pose, namespace)
@@ -260,7 +256,7 @@ class detectionService:
                         # Check duplicates
                         if not self.is_duplicate(marker):
                             if self.logging:
-                                rgb_img = cv2.putText(rgb_img, str(self.marker_id), (y1,x1+5), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                rgb_img = cv2.putText(rgb_img, str(self.marker_id), (x1,y1+5), cv2.FONT_HERSHEY_SIMPLEX, 1,
                                             color, 2, cv2.FILLED)
                                 cv2.imwrite("{:s}/{:s}.png".format(path, camera_name), rgb_img)
                                 cv2.imwrite("{:s}/{:s}_binary.png".format(path, camera_name), mask)

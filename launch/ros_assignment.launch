@@ -13,8 +13,8 @@
     <arg name="nr" value="$(arg nr)"/>
   </include>
 
-  <arg name="nav_client_file"   value="$(find ros_assignment)/config/navigation_goals.yaml"/>
-  <arg name="logging"           value="true"/>
+  <arg name="nav_client_file"   default="$(find ros_assignment)/config/navigation_goals.yaml"/>
+  <arg name="logging"           default="true"/>
 
   <group ns="$(arg namespace)">
 

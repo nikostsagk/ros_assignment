@@ -131,7 +131,7 @@ class topoNavClient:
                     self.marker_list[row].append(marker)
         
         for row in self.nodes:
-            rospy.loginfo("{:s}: {:d} grapes".format(row, len(self.marker_list[row])))
+            rospy.loginfo("{:s}: {:d} grapes".format(row, len(self.marker_list[row])/2))
 
     def load_nav_file(self, file):
         """
